@@ -1,0 +1,46 @@
+name: Trae 每日签到
+
+on:
+  schedule:
+    - cron: '23 16 * * *'   # UTC 时间 = 北京时间 00:23（北京 UTC+8，cron 要减 8 小时）
+  workflow_dispatch:        # 允许在 Actions 页面手动触发，便于测试
+
+concurrency:
+  group: trae-checkin
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # refreshToken 是轮换链：每次续期都会产生新值、旧值随即作废。
+      # Actions 的工作目录是一次性的，跑完就丢，所以必须把续期后的
+      # token 用缓存带到下一次运行，否则第二次必拿作废 token 去登录。
+      # key 带 run_id：同名缓存不可覆盖，保证每次写入一份新缓存；
+      # restore-keys：下次运行时取回最近的那一份。
+      # 这一段不能删。
+      - name: 恢复 token 缓存
+        uses: actions/cache@v5
+        with:
+          path: .trae_token_cache.json
+          key: trae-token-${{ github.run_id }}
+          restore-keys: |
+            trae-token-
+
+      - name: 执行签到
+        env:
+          TRAE_ACCOUNTS: ${{ secrets.TRAE_ACCOUNTS }}        # 必填：accounts 数组 JSON
+          QYWX_TOKEN: ${{ secrets.QYWX_TOKEN }}              # 选填：企业微信机器人 key
+          PLUSPLUS_TOKEN: ${{ secrets.PLUSPLUS_TOKEN }}      # 选填：PushPlus token
+          TRAE_WEBHOOK: ${{ secrets.TRAE_WEBHOOK }}          # 选填：自定义 webhook
+        run: python 03_checkin.py
